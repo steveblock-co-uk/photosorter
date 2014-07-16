@@ -295,33 +295,6 @@ EXIF.StringValues = {
 	}
 }
 
-function addEvent(oElement, strEvent, fncHandler) 
-{
-	if (oElement.addEventListener) { 
-		oElement.addEventListener(strEvent, fncHandler, false); 
-	} else if (oElement.attachEvent) { 
-		oElement.attachEvent("on" + strEvent, fncHandler); 
-	}
-}
-
-
-function imageHasData(oImg) 
-{
-	return !!(oImg.exifdata);
-}
-
-function getImageData(oImg, fncCallback) 
-{
-	BinaryAjax(
-		oImg.src,
-		function(oHTTP) {
-			var oEXIF = findEXIFinJPEG(oHTTP.binaryResponse);
-			oImg.exifdata = oEXIF || {};
-			if (fncCallback) fncCallback();
-		}
-	)
-}
-
 function findEXIFinJPEG(oFile) {
 	var aMarkers = [];
 
@@ -552,78 +525,9 @@ function readEXIFData(oFile, iStart, iLength)
 	return oTags;
 }
 
-
-EXIF.getData = function(oImg, fncCallback) 
-{
-	if (!oImg.complete) return false;
-	if (!imageHasData(oImg)) {
-		getImageData(oImg, fncCallback);
-	} else {
-		if (fncCallback) fncCallback();
-	}
-	return true;
-}
-
-EXIF.getTag = function(oImg, strTag) 
-{
-	if (!imageHasData(oImg)) return;
-	return oImg.exifdata[strTag];
-}
-
-EXIF.getAllTags = function(oImg) 
-{
-	if (!imageHasData(oImg)) return {};
-	var oData = oImg.exifdata;
-	var oAllTags = {};
-	for (var a in oData) {
-		if (oData.hasOwnProperty(a)) {
-			oAllTags[a] = oData[a];
-		}
-	}
-	return oAllTags;
-}
-
-
-EXIF.pretty = function(oImg) 
-{
-	if (!imageHasData(oImg)) return "";
-	var oData = oImg.exifdata;
-	var strPretty = "";
-	for (var a in oData) {
-		if (oData.hasOwnProperty(a)) {
-			if (typeof oData[a] == "object") {
-				strPretty += a + " : [" + oData[a].length + " values]\r\n";
-			} else {
-				strPretty += a + " : " + oData[a] + "\r\n";
-			}
-		}
-	}
-	return strPretty;
-}
-
 EXIF.readFromBinaryFile = function(oFile) {
 	return findEXIFinJPEG(oFile);
 }
-
-function loadAllImages() 
-{
-	var aImages = document.getElementsByTagName("img");
-	for (var i=0;i<aImages.length;i++) {
-		if (aImages[i].getAttribute("exif") == "true") {
-			if (!aImages[i].complete) {
-				addEvent(aImages[i], "load", 
-					function() {
-						EXIF.getData(this);
-					}
-				); 
-			} else {
-				EXIF.getData(aImages[i]);
-			}
-		}
-	}
-}
-
-addEvent(window, "load", loadAllImages); 
 
 })();
 
