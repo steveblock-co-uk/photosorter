@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script type="text/javascript" src="jquery/jquery-2.1.1.js"></script>
+    <script type="text/javascript" src="timezone-js-master/src/date.js"></script>
+    <script type="text/javascript" src="exif.js"></script>
+    <script type="text/javascript" src="binaryajax.js"></script>
+    <script type="text/javascript" src="photosorter.js"></script>
+    <script type="text/javascript">
+      var defaultTimezone = 'America/Vancouver';
+      var defaultTimezone = 'Europe/London';
+      var numColours = 5;
+      var timelineOffsetPixels = 50;
+
+      function updateDisplayTimezone(event) {
+        sorterView.updateDisplayTimezone(event.target.value);
+      }
+
+      function populateDisplayTimezones() {
+        var timezones = document.getElementById('displayTimezones');
+        timezoneJS.timezone.getAllZones().forEach(function(timezone) {
+          var option = document.createElement('option');
+          option.value = timezone;
+          option.innerText = timezone;
+          timezones.appendChild(option);
+        })
+        timezones.value = defaultTimezone;
+        timezones.onchange = updateDisplayTimezone;
+      }
+
+      // We pass a timezone rather than a timezone offset, as the latter varies
+      // with date due to daylight savings.
+      function dateFromEXIF(exifData, defaultTimezone) {
+        console.log(exifData['Model']);
+        // EXIF doesn't support time zone - http://en.wikipedia.org/wiki/Exchangeable_image_file_format
+
+        var dateTimeOriginal = exifData['DateTimeOriginal'];
+        var localDateProperties = localDateFromEXIFDateString(dateTimeOriginal.split(' ')[0]);
+        var localTimeProperties = localTimeFromEXIFDateString(dateTimeOriginal.split(' ')[1]);
+
+	// TOOD: We could do something clever where the decision as to which
+	// date and timezone offset to use is based on data from all photos in
+	// the timeline. eg the timezone offset is constant. But it's not clear
+	// that this would be better (what if the photos span a DST shift?)
+	// Plus it gets very complicated, especially as we can add to a
+	// timeline on multiple occasions. 
+
+	// TODO: First check TimeZoneOffset. This isn't part of the EXIF spec,
+	// and doesn't seem to be widely supported.
+        // http://www.sno.phy.queensu.ca/~phil/exiftool/TagNames/EXIF.html
+
+        // Check GPSTimeStamp
+        // TODO: Use GPSDateStamp too?
+        // TODO: Seems this often differs from camera date. For now, assume camera date is correct?
+        var gpsDateString = exifData['GPSDateStamp'];
+        var gpsTimeArray = exifData['GPSTimeStamp'];
+        if (gpsDateString && gpsTimeArray) {
+          var gpsDateProperties = localDateFromEXIFDateString(gpsDateString);
+          var gpsDate = new timezoneJS.Date(gpsDateProperties.year, gpsDateProperties.month - 1, gpsDateProperties.day,
+                                            gpsTimeArray[0], gpsTimeArray[1], gpsTimeArray[0],
+                                            'UTC');
+
+          // Calculate the local date assuming UTC.
+          var localDateUTC = new timezoneJS.Date(localDateProperties.year, localDateProperties.month - 1, localDateProperties.day,
+                                                 localTimeProperties.hour, localTimeProperties.minute, localTimeProperties.second,
+                                                 'UTC');
+
+          // Match sign of Date.getTimezoneOffset();
+          var timezoneOffsetMinutes = (gpsDate - localDateUTC) / (60 * 1000);
+          if (isValidTimezoneOffset(timezoneOffsetMinutes)) {
+            console.log('Using gps date ' + formatDate(gpsDate));
+            return gpsDate;
+          }
+        }
+
+        var localDate = new timezoneJS.Date(localDateProperties.year, localDateProperties.month - 1, localDateProperties.day,
+                                            localTimeProperties.hour, localTimeProperties.minute, localTimeProperties.second,
+                                            defaultTimezone);
+        console.log('Using local date ' + formatDate(localDate));
+        return localDate;
+      }
+      function isValidTimezoneOffset(minutes) {
+        if (Math.abs(minutes) / 60 > 12)
+          return false;
+        var timezoneSizeMinutes = 60;
+        var timezones = minutes / timezoneSizeMinutes;
+        return (Math.abs(timezones) % 1) * timezoneSizeMinutes < 5;
+      }
+      function formatDate(date, timezone) {
+        // TODO: Why doesn't toLocaleDateString() work?
+        // Could use it with setTimezone(), doesn't change the timestamp, it just changes the representation.
+        return date.toString('dd MMM yyyy HH:mm:ss', timezone);
+      }
+      // The EXIF format isn't a standard format
+      function localDateFromEXIFDateString(string) {
+        var matches = string.match(/(\d{4}):(\d{2}):(\d{2})/);
+        return {
+          year: matches[1],
+          month: matches[2],
+          day: matches[3]
+        };
+      }
+      function localTimeFromEXIFDateString(string) {
+        var matches = string.match(/(\d{2}):(\d{2}):(\d{2})/);
+        return {
+          hour: matches[1],
+          minute: matches[2],
+          second: matches[3]
+        };
+      }
+
+      function SorterView() {
+        // TODO: It's a bit odd that we store both the timelines and the photo views?
+        this.timelines_ = [];
+        this.photoViews_ = [];
+        this.sortedPhotoViews_ = null;
+        this.addTimelinePhotosRemainingCount_ = 0;
+      }
+      SorterView.prototype.updateDisplayTimezone = function(timezone) {
+        this.photoViews_.forEach(function(photoViews) {
+          photoViews.forEach(function(photoView) {
+            photoView.updateDisplayTimezone(timezone);
+          });
+        });
+      };
+      SorterView.prototype.addPhotos = function(files, onComplete) {
+        // TODO: Add way to override which timeline to add to
+        console.assert(onComplete);
+        console.assert(this.addTimelinePhotosRemainingCount_ === 0);
+        this.addPhotosRemainingCount_ = files.length;
+        this.onAddPhotosCompleteCallback_ = onComplete;
+        for (var i = 0; i < files.length; ++i)
+          this.addPhoto_(files[i]);
+      };
+      SorterView.prototype.getTimeline_ = function(key) {
+        if (this.timelines_[key] === undefined)
+          this.timelines_[key] = new Timeline();
+        return this.timelines_[key];
+      };
+      SorterView.prototype.addPhoto_ = function(file) {
+        var fileReader = new FileReader();
+        var url = URL.createObjectURL(file);
+        // TODO: Consider using proper closure
+        var me = this;
+        fileReader.onload = function() {
+          var exifData = EXIF.readFromBinaryFile(new BinaryFile(this.result));
+          var cameraModel = exifData['Model'];
+          //console.log(exifData);
+          // TODO: Allow default TZ to be set.
+          var date = dateFromEXIF(exifData, defaultTimezone);
+          var size = {x: exifData['PixelXDimension'], y: exifData['PixelYDimension']};
+          me.getTimeline_(cameraModel).addPhoto(new Photo(url, date, size));
+          me.onPhotoAdded_();
+        };
+        fileReader.readAsBinaryString(file);
+      };
+      SorterView.prototype.onPhotoAdded_ = function() {
+        console.assert(this.addPhotosRemainingCount_ >= 0);
+
+        // TODO: Show progress bar
+        console.log(this.addPhotosRemainingCount_ + ' photos remaining');
+
+        if (--this.addPhotosRemainingCount_ > 0)
+          return;
+
+        // TODO: Consider doing this lazily?
+        // TODO: Just update the timelines that have been touched?
+        // TODO: Would be good to re-use the PhotoView for pre-existing photos, but we'd have to reset the CSS class.
+        this.photoViews_ = Object.keys(this.timelines_).map(function(key, i) {
+          return this.timelines_[key].getSortedPhotos().map(function(photo) {
+            return new PhotoView(photo, i);
+          });
+        }, this);
+        this.sortPhotos_();
+
+        this.lineViews_ = Object.keys(this.timelines_).map(function(key, i) {
+          return new LineView(key, i);
+        });
+
+        this.onAddPhotosCompleteCallback_();
+      };
+      SorterView.prototype.shiftTimeline = function(index, shiftMilliseconds) {
+        // TODO: This should update the photo views to display the shift time somehow.
+        this.timelines_[index].shift(shiftMilliseconds);
+        this.sortPhotos_();
+      };
+      SorterView.prototype.sortPhotos_ = function() {
+        this.sortedPhotoViews_ = mergeSort(this.photoViews_, function(photoViewA, photoViewB) {
+          return photoViewA.photo_.shiftedTimestamp() - photoViewB.photo_.shiftedTimestamp();
+        });
+      };
+      SorterView.prototype.getSortedPhotoDomContents = function() {
+        return this.sortedPhotoViews_.map(function(photoView) {
+          return photoView.domContent();
+        });
+      };
+      SorterView.prototype.getLineDomContents = function() {
+        return this.lineViews_.map(function(lineView) {
+          return lineView.domContent();
+        });
+      };
+      SorterView.prototype.toString = function() {
+        return this.timelines_.map(function(timeline) {
+          return '[' + timeline.getSortedPhotos().map(function(photo) { return photo.timestamp(); }).join(', ') + ']';
+        }).join('\n');
+      };
+
+      // Gets the vertical scale for a rectangle of the given aspect ratio to
+      // have the same area as a rectangle with ascpect ration 3:4 and 100%
+      // height.
+      function verticalScaleForEqualArea(aspectRatio) {
+        // 1 * 0.75 = A = x * x * aspectRatio
+        return Math.sqrt(0.75 / aspectRatio);
+      }
+
+      function PhotoView(photo, index) {
+        this.photo_ = photo;
+
+        // TODO: Consider doing this lazily?
+        this.domContent_ = document.createElement('div');
+        this.domContent_.className = 'photo timelineColour' + (index % numColours);
+        this.domContent_.style.top = (timelineOffsetPixels * index) + 'px';
+        var aspectRatio = this.photo_.size().x / this.photo_.size().y;
+        this.domContent_.style.height = (100 * verticalScaleForEqualArea(aspectRatio)) + '%';
+        var image = document.createElement('img');
+        image.src = this.photo_.url();
+        this.domContent_.appendChild(image);
+        var timestamp = document.createElement('div');
+        // TODO: Allow TZ to be set
+        timestamp.innerText = formatDate(this.photo_.timestamp(), defaultTimezone);
+        this.domContent_.appendChild(timestamp);
+      }
+      PhotoView.prototype.updateDisplayTimezone = function(timezone) {
+        this.domContent_.lastChild.innerText = formatDate(this.photo_.timestamp(), timezone);
+      };
+      PhotoView.prototype.photo = function() {
+        return this.photo_;
+      };
+      PhotoView.prototype.domContent = function() {
+        return this.domContent_;
+      };
+
+      function LineView(name, index) {
+        this.domContent_ = document.createElement('div');
+        this.domContent_.innerText = name;
+        this.domContent_.className = 'line lineColour' + (index % numColours);
+        // TODO: Don't hardcode this - use CSS variables?
+        this.domContent_.style.top = 85 + (timelineOffsetPixels * index) + 'px';
+      }
+      LineView.prototype.domContent = function() {
+        return this.domContent_;
+      }
+       
+      function setup() {
+        timezoneJS.timezone.zoneFileBasePath = 'tz';
+        timezoneJS.timezone.defaultZoneFile = ['europe', 'northamerica', 'etcetera'];
+        timezoneJS.timezone.init({callback: populateDisplayTimezones});
+
+        sorterView = new SorterView();
+        document.getElementById('file_input').addEventListener('change', function(event) {
+          sorterView.addPhotos(event.target.files, function() {
+            var lines = document.getElementById('lines');
+            lines.innerHTML = '';
+            sorterView.getLineDomContents().forEach(function(domContent) {
+              lines.appendChild(domContent);
+            });
+            var photos = document.getElementById('photos');
+            photos.innerHTML = '';
+            sorterView.getSortedPhotoDomContents().forEach(function(domContent) {
+              photos.appendChild(domContent);
+            });
+          });
+        });
+      }
+    </script>
+    <style type="text/css">
+      div#timelines {
+        width: 10000px; /* TODO: Make this grow beyond screen width */
+      }
+      div#timelines > div#photos {
+        position: relative;
+        display: flex;
+        height: 200px;
+        margin-left: 200px;
+        /* This allows centering to overflow the height - unlike using margin: auto on the children; */
+        align-items: center;
+      }
+      div#timelines > div#photos > div.photo {
+        display: inline-block;
+        margin: 0px 10px;
+        border: 10px solid;
+        border-radius: 20px;
+        position: relative;
+      }
+      div#timelines > div#photos > div.photo > img {
+        border-radius: 10px;
+        height: 100%;
+      }
+      div#timelines > div#photos > div.photo > div {
+        font-family: courier;
+        font-size: x-small;
+        position: absolute;
+        top: 0px;
+        background-color: rgba(240, 240, 240, 0.5);
+        padding: 5px;
+        width: calc(100% - 10px);
+        border-radius: 10px 10px 0px 0px;
+      }
+
+      div#timelines > div#photos > div.photo.timelineColour0 {
+        background-color: #F16745;
+        border-color: #F16745;
+      }
+      div#timelines > div#photos > div.photo.timelineColour1 {
+        background-color: #FFC65D;
+        border-color: #FFC65D;
+      }
+      div#timelines > div#photos > div.photo.timelineColour2 {
+        background-color: #7BC8A4;
+        border-color: #7BC8A4;
+      }
+      div#timelines > div#photos > div.photo.timelineColour3 {
+        background-color: #4CC3D9;
+        border-color: #4CC3D9;
+      }
+      div#timelines > div#photos > div.photo.timelineColour4 {
+        background-color: #93648D;
+        border-color: #93648D;
+      }
+      div#timelines > div#lines {
+        position: relative;
+      }
+      div#timelines > div#lines > div.line {
+        position: absolute;
+        height: 20px;
+        padding: 5px;
+        width: 100%;
+        z-index: -1;
+      }
+      div#timelines > div#lines > div.lineColour0 {
+        background-color: #F16745;
+      }
+      div#timelines > div#lines > div.lineColour1 {
+        background-color: #FFC65D;
+      }
+      div#timelines > div#lines > div.lineColour2 {
+        background-color: #7BC8A4;
+      }
+      div#timelines > div#lines > div.lineColour3 {
+        background-color: #4CC3D9;
+      }
+      div#timelines > div#lines > div.lineColour4 {
+        background-color: #93648D;
+      }
+    </style>
+  </head>
+  <body onload="setup()">
+    <input type="file" multiple accept="image/*" id="file_input"></input>
+    <!-- TODO: It would be good to be able to reset the timezone for each
+	 timeline, but this is tricky. Should we allow photos using the GPS
+	 date to have their timezone ovverriden? What if only some photos in a
+         given timeline use the default timezone? -->
+    <datalist id="timezones"></datalist>
+    <div>
+      <label for="displayTimezones">Display timezone</label>
+      <select id="displayTimezones"></select>
+    </div>
+    <div id="timelines">
+      <div id="lines"></div>
+      <div id="photos"></div>
+    </div>
+  </body>
+</html>

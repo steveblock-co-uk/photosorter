@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script type="text/javascript" src="photosorter.js"></script>
+    <script type="text/javascript" src="test.js"></script>
+    <script type="text/javascript">
+      function identityComparator(a, b) {
+        return a - b;
+      }
+      function xComparator(a, b) {
+        return a.x - b.x;
+      }
+      function identityAccessor(a) {
+        return a;
+      }
+      function xComparator(a, b) {
+        return a.x - b.x;
+      }
+      function runTests() {
+        // Test basic use.
+        check(stableSort([0, 2, 1, 7, 3, 5], identityComparator),
+              [0, 1, 2, 3, 5, 7],
+              'Basic stableSort()');
+
+        // Test stability.
+        check(stableSort([{x: 0, y: 0}, {x: 2, y: 1}, {x: 1, y: 2}, {x: 7, y: 3}, {x: 2, y: 4}, {x: 5, y: 4}], xComparator),
+              [{x: 0, y: 0}, {x: 1, y: 2}, {x: 2, y: 1}, {x: 2, y: 4}, {x: 5, y: 4}, {x: 7, y: 3}],
+              'Stability');
+
+        // Test basic use.
+        check(mergeSortPair([0, 2, 4, 6, 8], [1, 3, 5], identityComparator),
+              [0, 1, 2, 3, 4, 5, 6, 8],
+              'Basic mergeSortPair()');
+
+        // Test stability.
+        check(mergeSortPair([{x: 0, y: 0}, {x: 2, y: 1}, {x: 4, y: 2}, {x: 6, y: 3}, {x: 8, y: 4}], [{x: 2, y: 0}, {x: 3, y: 1}, {x: 5, y: 2}], xComparator),
+              [{x: 0, y: 0}, {x: 2, y: 1}, {x: 2, y: 0}, {x: 3, y: 1}, {x: 4, y: 2}, {x: 5, y: 2}, {x: 6, y: 3}, {x: 8, y: 4}],
+              'Stability');
+
+
+        // Test basic use.
+        check(mergeSort([[0, 2, 4, 6, 8], [1, 3, 5], [-1, 7, 9]], identityComparator),
+              [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+              'Basic mergeSort()');
+
+        // Test stability.
+        check(mergeSort([[{x: 0, y: 0}, {x: 2, y: 1}, {x: 4, y: 2}, {x: 6, y: 3}, {x: 8, y: 4}], [{x: 2, y: 0}, {x: 3, y: 1}, {x: 5, y: 2}], [{x: -1, y: 0}, {x: 1, y: 1}, {x: 2, y: 2}]], xComparator),
+              [{x:-1, y:0}, {x: 0, y: 0}, {x: 1, y: 1}, {x: 2, y: 1}, {x: 2, y: 0}, {x: 2, y: 2}, {x: 3, y: 1}, {x: 4, y: 2}, {x: 5, y: 2}, {x: 6, y: 3}, {x: 8, y: 4}],
+              'Stability');
+
+        // Test basic use.
+        check(findMinimumDelta([10, 20, 30], [[23, 33], [22, 34]], identityAccessor, false),
+              2,
+              'Basic findMinimumDelta()');
+
+        // Specify forwards but closest is behind
+        check(findMinimumDelta([10, 20, 30], [[23, 19], [22, 34]], identityAccessor, false),
+              2,
+              'Specify forwards but closest is behind');
+
+        // Specify reverse but closest is ahead
+        check(findMinimumDelta([10, 20, 30], [[17, 21], [18, 26]], identityAccessor, true),
+              2,
+              'Specify reverse but closest is ahead');
+
+        // Default value for reverse
+        check(findMinimumDelta([10, 20, 30], [[17, 21], [18, 26]], identityAccessor, true),
+              2,
+              'Default value for reverse');
+
+        // Repeated minimum
+        check(findMinimumDelta([10, 20, 30], [[23, 32], [22, 34]], identityAccessor, false),
+              2,
+              'Repeated minimum');
+
+        // Equal values
+        // TODO: Is this what we want?!
+        check(findMinimumDelta([10, 20, 30], [[23, 33], [20, 34]], identityAccessor, false),
+              0,
+              'Equal values');
+
+      }
+    </script>
+    <style type="text/css">
+      body {
+        font-family: Verdana, Geneva, sans-serif;
+        font-size: small;
+      }
+      body > div {
+        background-color: lime;
+        margin: 2px;
+        border: 1px solid grey;
+        padding: 1px;
+      }
+      body > div.fail {
+        background-color: red;
+      }
+    </style>
+  </head>
+  <body onload="runTests();">
+  <body>
+</html>
