@@ -1,9 +1,9 @@
 function Photo(url, timestamp, size) {
   this.init_(url, timestamp, size);
 }
-Photo.prototype.init_ = function(url, timestamp, size) {
+Photo.prototype.init_ = function(url, size) {
   this.url_ = url;
-  this.timestamp_ = timestamp;
+  this.timestamp_ = null;
   this.size_ = size;
   this.shiftMilliseconds_ = 0;
 }

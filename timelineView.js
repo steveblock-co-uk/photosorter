@@ -22,41 +22,45 @@ function localDateFromEXIFDateString(string) {
   };
 }
 
-function localTimeFromEXIFDateString(string) {
-  var matches = string.match(/(\d{2}):(\d{2}):(\d{2})/);
-  return {
-    hour: matches[1],
-    minute: matches[2],
-    second: matches[3]
-  };
+function localTimestampFromEXIFTimestampString(string) {
+  var components = string.split(' ');
+  var localTimestampProperties = localDateFromEXIFDateString(components[0]);
+  var matches = components[1].match(/(\d{2}):(\d{2}):(\d{2})/);
+  localTimestampProperties.hour =  matches[1],
+  localTimestampProperties.minute =  matches[2],
+  localTimestampProperties.second =  matches[3]
+  return localTimestampProperties;
 }
 
-function getDateTimeOriginal(exifData, defaultTimezone) {
-  // EXIF doesn't support time zone - http://en.wikipedia.org/wiki/Exchangeable_image_file_format
+function printPropertyBag(bag) {
+  return '{' + Object.keys(bag).map(function(key) {
+    return key + '=' + bag[key];
+  }).join(', ') + '}';
+}
 
-  var dateTimeOriginal = exifData['DateTimeOriginal'];
-  var localDateProperties = localDateFromEXIFDateString(dateTimeOriginal.split(' ')[0]);
-  var localTimeProperties = localTimeFromEXIFDateString(dateTimeOriginal.split(' ')[1]);
-  var dateTimeOriginal = new timezoneJS.Date(localDateProperties.year, localDateProperties.month - 1, localDateProperties.day,
-                                             localTimeProperties.hour, localTimeProperties.minute, localTimeProperties.second,
-                                             defaultTimezone);
-  console.log('dateTimeOriginal ' + formatDate(dateTimeOriginal));
-  return dateTimeOriginal;
+function getLocalTimestampProperties(exifData) {
+  // EXIF doesn't support time zone - http://en.wikipedia.org/wiki/Exchangeable_image_file_format
+  return localTimestampFromEXIFTimestampString(exifData['DateTimeOriginal']);
 }
 
 function getGPSTimestamp(exifData) {
   var gpsDateString = exifData['GPSDateStamp'];
   var gpsTimeArray = exifData['GPSTimeStamp'];
   if (!gpsDateString || !gpsTimeArray)
-    return;
+    return null;
 
   var gpsDateProperties = localDateFromEXIFDateString(gpsDateString);
-  var gpsDate = new timezoneJS.Date(gpsDateProperties.year, gpsDateProperties.month - 1, gpsDateProperties.day,
-                                    gpsTimeArray[0], gpsTimeArray[1], gpsTimeArray[0],
-                                    'UTC');
-  console.log('gpsDate ' + formatDate(gpsDate));
-  return gpsDate;
+  return new timezoneJS.Date(gpsDateProperties.year, gpsDateProperties.month - 1, gpsDateProperties.day,
+                             gpsTimeArray[0], gpsTimeArray[1], gpsTimeArray[0],
+                             'UTC');
 }
+
+function applyTimezoneToLocalTimestampProperties(localTimestampProperties, timezone) {
+  return new timezoneJS.Date(localTimestampProperties.year, localTimestampProperties.month - 1, localTimestampProperties.day,
+                             localTimestampProperties.hour, localTimestampProperties.minute, localTimestampProperties.second,
+                             timezone);
+}
+
 
 // Handles the multiple timestamps for a Photo.
 function EXIFPhoto(url, exifData) {
@@ -64,30 +68,30 @@ function EXIFPhoto(url, exifData) {
   // TODO: Also check TimeZoneOffset. This isn't part of the EXIF spec,
   // and doesn't seem to be widely supported.
   // http://www.sno.phy.queensu.ca/~phil/exiftool/TagNames/EXIF.html
-  this.exifTimestamp_ = getDateTimeOriginal(exifData, defaultTimezone);
+  this.localTimestampProperties_ = getLocalTimestampProperties(exifData);
   this.gpsTimestamp_ = getGPSTimestamp(exifData);
 
   var size = {x: exifData['PixelXDimension'], y: exifData['PixelYDimension']};
-  // Use EXIF timestamp by default.
-  this.init_(url, this.exifTimestamp_, size);
+  this.init_(url, size);
 };
 EXIFPhoto.prototype = Photo.prototype;
-EXIFPhoto.prototype.useEXIFTimestamp = function() {
-  this.timestamp_ = this.exifTimestamp_;
+EXIFPhoto.prototype.toString = function() {
+  return '{EXIFPhoto url=' + this.url_ + ' size=' + printPropertyBag(this.size_) + ' localTimestampProperties=' + printPropertyBag(this.localTimestampProperties_) + ' gpsTimestamp=' + this.gpsTimestamp_ + ' }';
 };
-EXIFPhoto.prototype.useGPSTimestamp = function() {
-  this.timestamp_ = this.gpsTimestamp_;
+EXIFPhoto.prototype.setTimezone = function(timezone) {
+  this.timestamp_ = applyTimezoneToLocalTimestampProperties(this.localTimestampProperties_, timezone);
 };
-EXIFPhoto.prototype.exifTimestamp = function() {
-  return this.exifTimestamp_;
+EXIFPhoto.prototype.localTimestampProperties = function() {
+  return this.localTimestampProperties_;
 };
 EXIFPhoto.prototype.gpsTimestamp = function() {
   return this.gpsTimestamp_;
 };
 
 // Handles DOM content for an EXIFPhoto.
-function PhotoView(exifPhoto, index) {
+function PhotoView(exifPhoto, index, displayTimezone) {
   this.exifPhoto_ = exifPhoto;
+  this.displayTimezone_ = displayTimezone;
 
   // TODO: Consider doing this lazily?
   this.domContent_ = document.createElement('div');
@@ -99,13 +103,19 @@ function PhotoView(exifPhoto, index) {
   image.src = this.exifPhoto_.url();
   this.domContent_.appendChild(image);
   var timestamp = document.createElement('div');
-  // TODO: Allow TZ to be set
-  // We display the actual timestmp, without shifting applied.
-  timestamp.innerText = formatDate(this.exifPhoto_.timestamp(), defaultTimezone);
   this.domContent_.appendChild(timestamp);
 }
+PhotoView.prototype.updateTimestampDisplay_ = function() {
+  // We display the actual timestmp, without shifting applied.
+  this.domContent_.lastChild.innerText = formatDate(this.exifPhoto_.timestamp(), this.displayTimezone_);
+};
+PhotoView.prototype.setTimezone = function(timezone) {
+  this.exifPhoto_.setTimezone(timezone);
+  this.updateTimestampDisplay_();
+};
 PhotoView.prototype.updateDisplayTimezone = function(timezone) {
-  this.domContent_.lastChild.innerText = formatDate(this.exifPhoto_.timestamp(), timezone);
+  this.displayTimezone_ = displayTimezone;
+  this.updateTimestampDisplay_();
 };
 PhotoView.prototype.exifPhoto = function() {
   return this.exifPhoto_;
@@ -129,17 +139,67 @@ function TimelineView(name, index) {
 TimelineView.prototype.lineDOMContent = function() {
   return this.lineDOMContent_;
 };
-TimelineView.prototype.addPhoto = function(url, exifData) {
+TimelineView.prototype.addPhoto = function(url, exifData, displayTimezone) {
   // As well as adding the Photo to the Timeline, we create and keep our own
   // reference to a corresponding PhotoView. We use this to handle DOM content
   // and the multiple timestamps.
   var exifPhoto = new EXIFPhoto(url, exifData);
+  console.log('TimelineView.addPhoto(): Index=' + this.index_ + ' adding ' + exifPhoto);
   this.timeline_.addPhoto(exifPhoto);
   console.assert(this.photoViews_[url] === undefined);
-  this.photoViews_[url] = new PhotoView(exifPhoto, this.index_);
+  this.photoViews_[url] = new PhotoView(exifPhoto, this.index_, displayTimezone);
+  this.setTimestamps_();
 };
-TimelineView.prototype.selectAppropriateDates = function() {
-  // TODO
+TimelineView.prototype.setTimestamps_ = function() {
+  console.log('TimelineView.setTimestamps_()');
+  // Assume that the EXIF time wasn't reset within the timeline.
+  // The GPS timestamp is prone to wobble, so we never actually use it as a
+  // timestamp. We just use it to determine the timezone.
+  // TODO: If the EXIF timestamp (with timezone offset applied) is consistently
+  // shifted by a fixed amount from the 'correct' time based on the GPS
+  // timestamp, we could consider shifting it automatically. But this is hard
+  // to detect and it's easy for the user to fix this manually anyway.
+  var timezone = defaultTimezone;
+
+  // See if all the GPS timestamps correspond to a single timezone relative to
+  // the local timestamp, within some offset.
+  var thresholdMinutes = 5;
+  var consistentTimezones = timezoneJS.timezone.getAllZones();
+  var photoViews = this.photoViews_;
+  Object.keys(photoViews).every(function(url) {
+    var candidateTimezones = consistentTimezones;
+    consistentTimezones = [];
+    var exifPhoto = photoViews[url].exifPhoto();
+    console.log('exifPhoto = ' + exifPhoto);
+    var gpsTimestamp = exifPhoto.gpsTimestamp();
+    if (gpsTimestamp === null)
+      return false;
+    candidateTimezones.forEach(function(candidateTimezone) {
+      // TODO: Handle the two possibilities near a daylight-savings switch.
+      var timestamp = applyTimezoneToLocalTimestampProperties(exifPhoto.localTimestampProperties(), candidateTimezone);
+      var delta = timestamp - gpsTimestamp;
+      if (Math.abs(delta) / (1000 * 60) < thresholdMinutes)
+        consistentTimezones.push(candidateTimezone);
+    });
+    console.log('Consistent timezones after this photo: [' + consistentTimezones.join(', ') + ']');
+    return consistentTimezones.length > 0;
+  });
+  console.log('Consistent timezones after all photos: [' + consistentTimezones.join(', ') + ']');
+  // There could be multiple consistent timezones. While some could be
+  // identical, others may differ due to different dates for the DST switches.
+  // In theory, this could make a difference to how we resolve the local
+  // timestamps. In practice, because timezone offsets are discretized at 15
+  // minutes, which is larger than our threshold for consistency, this won't be
+  // a problem. So we just take the first timezone.
+  // TODO: Consider asserting that all consistent timezones are identical?
+  if (consistentTimezones.length > 0) {
+    console.log('Using calculated timezone ' + consistentTimezones[0]);
+    timezone = consistentTimezones[0];
+  }
+ 
+  Object.keys(photoViews).forEach(function(url) {
+    photoViews[url].setTimezone(timezone);
+  });
 };
 TimelineView.prototype.getSortedPhotoViews = function() {
   var photoViews = this.photoViews_;
@@ -160,18 +220,18 @@ function SorterView() {
   this.addPhotosRemainingCount_ = 0;
 }
 SorterView.prototype.updateDisplayTimezone = function(timezone) {
-  var timelineViews = this.this.timelineViews_;
+  var timelineViews = this.timelineViews_;
   Object.keys(timelineViews).forEach(function(model) {
     timelineViews[model].updateDisplayTimezone(timezone);
   });
 };
-SorterView.prototype.addPhotos = function(files, onComplete) {
+SorterView.prototype.addPhotos = function(files, displayTimezone, onComplete) {
   console.assert(onComplete);
   console.assert(this.addPhotosRemainingCount_ === 0);
   this.addPhotosRemainingCount_ = files.length;
   this.onAddPhotosCompleteCallback_ = onComplete;
   for (var i = 0; i < files.length; ++i)
-    this.addPhoto_(files[i]);
+    this.addPhoto_(files[i], displayTimezone);
 };
 SorterView.prototype.getTimelineView_ = function(model) {
   // Each TimelineView uses an index which is determined by the order of
@@ -182,7 +242,7 @@ SorterView.prototype.getTimelineView_ = function(model) {
   }
   return this.timelineViews_[model];
 };
-SorterView.prototype.addPhoto_ = function(file) {
+SorterView.prototype.addPhoto_ = function(file, displayTimezone) {
   var fileReader = new FileReader();
   var url = URL.createObjectURL(file);
   // TODO: Consider using proper closure
@@ -192,7 +252,7 @@ SorterView.prototype.addPhoto_ = function(file) {
     var cameraModel = exifData['Model'];
     //console.log(exifData);
     // TODO: Add way to override which timeline to add to?
-    me.getTimelineView_(cameraModel).addPhoto(url, exifData);
+    me.getTimelineView_(cameraModel).addPhoto(url, exifData, displayTimezone);
     me.onPhotoAdded_();
   };
   fileReader.readAsBinaryString(file);
@@ -203,11 +263,6 @@ SorterView.prototype.onPhotoAdded_ = function() {
   // TODO: Show progress bar
   console.log(this.addPhotosRemainingCount_ + ' photos remaining');
 
-  var timelineViews = this.timelineViews_;
-  Object.keys(timelineViews).forEach(function(model) {
-    timelineViews[model].selectAppropriateDates();
-  });
-
   if (--this.addPhotosRemainingCount_ > 0)
     return;
 
@@ -215,7 +270,7 @@ SorterView.prototype.onPhotoAdded_ = function() {
   this.onAddPhotosCompleteCallback_();
 };
 SorterView.prototype.shiftTimeline = function(index, shiftMilliseconds) {
-  // TODO: This should update the photo views to display the shift time somehow.
+  // TODO: This should update the TimelineViews to display the shift time.
   this.timelines_[index].shift(shiftMilliseconds);
 };
 SorterView.prototype.getSortedPhotoDOMContents = function() {

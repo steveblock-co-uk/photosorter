@@ -18,35 +18,29 @@
       }
 
       function populateDisplayTimezones() {
-        var timezones = document.getElementById('displayTimezones');
+        var displayTimezones = document.getElementById('displayTimezones');
         timezoneJS.timezone.getAllZones().forEach(function(timezone) {
           var option = document.createElement('option');
           option.value = timezone;
           option.innerText = timezone;
-          timezones.appendChild(option);
+          displayTimezones.appendChild(option);
         })
-        timezones.value = defaultTimezone;
-        timezones.onchange = updateDisplayTimezone;
-      }
-
-      // We pass a timezone rather than a timezone offset, as the latter varies
-      // with date due to daylight savings.
-      function isValidTimezoneOffset(minutes) {
-        if (Math.abs(minutes) / 60 > 12)
-          return false;
-        var timezoneSizeMinutes = 60;
-        var timezones = minutes / timezoneSizeMinutes;
-        return (Math.abs(timezones) % 1) * timezoneSizeMinutes < 5;
+        displayTimezones.value = defaultTimezone;
+        displayTimezones.onchange = updateDisplayTimezone;
       }
 
       function setup() {
         timezoneJS.timezone.zoneFileBasePath = 'tz';
-        timezoneJS.timezone.defaultZoneFile = ['europe', 'northamerica', 'etcetera'];
+	// TimezoneJS is supposed to lazy load by default, but ths seems not to
+	// work, so preload everything.
+        timezoneJS.timezone.loadingScheme = timezoneJS.timezone.loadingSchemes.PRELOAD_ALL;
         timezoneJS.timezone.init({callback: populateDisplayTimezones});
 
         sorterView = new SorterView();
         document.getElementById('file_input').addEventListener('change', function(event) {
-          sorterView.addPhotos(event.target.files, function() {
+          var displayTimezones = document.getElementById('displayTimezones');
+console.log(displayTimezones.value);
+          sorterView.addPhotos(event.target.files, displayTimezones.value, function() {
             var lines = document.getElementById('lines');
             lines.innerHTML = '';
             sorterView.getLineDOMContents().forEach(function(domContent) {
@@ -86,10 +80,10 @@
       }
       div#timelines > div#photos > div.photo > div {
         font-family: courier;
-        font-size: x-small;
+        font-size: small;
         position: absolute;
         top: 0px;
-        background-color: rgba(240, 240, 240, 0.5);
+        background-color: rgba(240, 240, 240, 0.6);
         padding: 5px;
         width: calc(100% - 10px);
         border-radius: 10px 10px 0px 0px;
