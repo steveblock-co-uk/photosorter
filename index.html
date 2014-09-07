@@ -39,8 +39,10 @@
 
         var displayTimezones = document.getElementById('displayTimezones');
         sorterView = new SorterView(displayTimezones.value);
+        photoLoader = new PhotoLoader(sorterView);
+        
         document.getElementById('file_input').addEventListener('change', function(event) {
-          sorterView.addPhotos(event.target.files, function() {
+          photoLoader.loadPhotos(event.target.files, function() {
             var lines = document.getElementById('lines');
             lines.innerHTML = '';
             sorterView.getLineDOMContents().forEach(function(domContent) {
@@ -54,6 +56,44 @@
           });
         });
       }
+
+      // Handles loading a number of photos and adding them to a SorterView.
+      function PhotoLoader(sorterView) {
+        this.sorterView_ = sorterView;
+        this.loadPhotosRemainingCount_ = 0;
+      }
+      PhotoLoader.prototype.loadPhotos = function(files, onComplete) {
+        console.assert(onComplete);
+        console.assert(this.loadPhotosRemainingCount_ === 0);
+        this.loadPhotosRemainingCount_ = files.length;
+        this.onLoadPhotosCompleteCallback_ = onComplete;
+        for (var i = 0; i < files.length; ++i)
+          this.loadPhoto_(files[i]);
+      };
+      PhotoLoader.prototype.loadPhoto_ = function(file) {
+        var fileReader = new FileReader();
+        var url = URL.createObjectURL(file);
+        // TODO: Consider using proper closure
+        var me = this;
+        fileReader.onload = function() {
+          var exifData = EXIF.readFromBinaryFile(new BinaryFile(this.result));
+          me.sorterView_.addPhoto(url, exifData);
+          me.onPhotoLoaded_();
+        };
+        fileReader.readAsBinaryString(file);
+      };
+      PhotoLoader.prototype.onPhotoLoaded_ = function() {
+        console.assert(this.loadPhotosRemainingCount_ >= 0);
+
+        // TODO: Show progress bar
+        console.log(this.loadPhotosRemainingCount_ + ' photos remaining');
+
+        if (--this.loadPhotosRemainingCount_ > 0)
+          return;
+
+        console.log('All photos loaded');
+        this.onLoadPhotosCompleteCallback_();
+      };
     </script>
     <style type="text/css">
       div#timelines {

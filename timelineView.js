@@ -92,7 +92,6 @@ TimelineView.prototype.updateDisplayTimezone = function(timezone) {
 // Owns a number of TimelineViews. Handles sorting of all the PhotoViews.
 function SorterView(displayTimezone) {
   this.timelineViews_ = {}
-  this.addPhotosRemainingCount_ = 0;
   this.displayTimezone_ = displayTimezone;
 }
 SorterView.prototype.updateDisplayTimezone = function(timezone) {
@@ -101,14 +100,6 @@ SorterView.prototype.updateDisplayTimezone = function(timezone) {
   Object.keys(timelineViews).forEach(function(model) {
     timelineViews[model].updateDisplayTimezone(timezone);
   });
-};
-SorterView.prototype.addPhotos = function(files, onComplete) {
-  console.assert(onComplete);
-  console.assert(this.addPhotosRemainingCount_ === 0);
-  this.addPhotosRemainingCount_ = files.length;
-  this.onAddPhotosCompleteCallback_ = onComplete;
-  for (var i = 0; i < files.length; ++i)
-    this.addPhoto_(files[i]);
 };
 SorterView.prototype.getTimelineView_ = function(model) {
   // Each TimelineView uses an index which is determined by the order of
@@ -119,32 +110,10 @@ SorterView.prototype.getTimelineView_ = function(model) {
   }
   return this.timelineViews_[model];
 };
-SorterView.prototype.addPhoto_ = function(file) {
-  var fileReader = new FileReader();
-  var url = URL.createObjectURL(file);
-  // TODO: Consider using proper closure
-  var me = this;
-  fileReader.onload = function() {
-    var exifData = EXIF.readFromBinaryFile(new BinaryFile(this.result));
-    var cameraModel = exifData['Model'];
-    //console.log(exifData);
-    // TODO: Add way to override which timeline to add to?
-    me.getTimelineView_(cameraModel).addPhoto(url, exifData);
-    me.onPhotoAdded_();
-  };
-  fileReader.readAsBinaryString(file);
-};
-SorterView.prototype.onPhotoAdded_ = function() {
-  console.assert(this.addPhotosRemainingCount_ >= 0);
-
-  // TODO: Show progress bar
-  console.log(this.addPhotosRemainingCount_ + ' photos remaining');
-
-  if (--this.addPhotosRemainingCount_ > 0)
-    return;
-
-  console.log('All photos added');
-  this.onAddPhotosCompleteCallback_();
+SorterView.prototype.addPhoto = function(url, exifData) {
+  var cameraModel = exifData['Model'];
+  // TODO: Add way to override which timeline to add to?
+  this.getTimelineView_(cameraModel).addPhoto(url, exifData);
 };
 SorterView.prototype.shiftTimeline = function(index, shiftMilliseconds) {
   // TODO: This should update the TimelineViews to display the shift time.
