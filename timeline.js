@@ -26,6 +26,9 @@ Photo.prototype.size = function() {
 };
 
 function Timeline() {
+  this.init_();
+}
+Timeline.prototype.init_ = function() {
   this.isDirty_ = false;
   this.photos_ = [];
   this.shiftMilliseconds_ = 0;

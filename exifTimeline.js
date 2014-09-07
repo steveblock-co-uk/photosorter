@@ -73,3 +73,58 @@ EXIFPhoto.prototype.localTimestampProperties = function() {
 EXIFPhoto.prototype.gpsTimestamp = function() {
   return this.gpsTimestamp_;
 };
+
+// Handles the multiple timestamps for a timeline of EXIFPhotos.
+function EXIFTimeline() {
+  this.init_();
+}
+EXIFTimeline.prototype = Timeline.prototype;
+EXIFTimeline.prototype.setTimestamps = function() {
+  console.log('EXIFTimelineView.setTimestamps()');
+  // Assume that the EXIF time wasn't reset within the timeline.
+  // The GPS timestamp is prone to wobble, so we never actually use it as a
+  // timestamp. We just use it to determine the timezone.
+  // TODO: If the EXIF timestamp (with timezone offset applied) is consistently
+  // shifted by a fixed amount from the 'correct' time based on the GPS
+  // timestamp, we could consider shifting it automatically. But this is hard
+  // to detect and it's easy for the user to fix this manually anyway.
+  var timezone = defaultTimezone;
+
+  // See if all the GPS timestamps correspond to a single timezone relative to
+  // the local timestamp, within some offset.
+  var thresholdMinutes = 5;
+  var consistentTimezones = timezoneJS.timezone.getAllZones();
+  this.photos_.forEach(function(exifPhoto) {
+    console.assert(exifPhoto instanceof EXIFPhoto);
+    var candidateTimezones = consistentTimezones;
+    consistentTimezones = [];
+    var gpsTimestamp = exifPhoto.gpsTimestamp();
+    if (gpsTimestamp === null)
+      return false;
+    candidateTimezones.forEach(function(candidateTimezone) {
+      // TODO: Handle the two possibilities near a daylight-savings switch.
+      var timestamp = applyTimezoneToLocalTimestampProperties(exifPhoto.localTimestampProperties(), candidateTimezone);
+      var delta = timestamp - gpsTimestamp;
+      if (Math.abs(delta) / (1000 * 60) < thresholdMinutes)
+        consistentTimezones.push(candidateTimezone);
+    });
+    console.log('Consistent timezones after this photo: [' + consistentTimezones.join(', ') + ']');
+    return consistentTimezones.length > 0;
+  });
+  console.log('Consistent timezones after all photos: [' + consistentTimezones.join(', ') + ']');
+  // There could be multiple consistent timezones. While some could be
+  // identical, others may differ due to different dates for the DST switches.
+  // In theory, this could make a difference to how we resolve the local
+  // timestamps. In practice, because timezone offsets are discretized at 15
+  // minutes, which is larger than our threshold for consistency, this won't be
+  // a problem. So we just take the first timezone.
+  // TODO: Consider asserting that all consistent timezones are identical?
+  if (consistentTimezones.length > 0) {
+    console.log('Using calculated timezone ' + consistentTimezones[0]);
+    timezone = consistentTimezones[0];
+  }
+ 
+  this.photos_.forEach(function(exifPhoto) {
+    exifPhoto.setTimezone(timezone);
+  });
+};

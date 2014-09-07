@@ -30,17 +30,13 @@ function PhotoView(exifPhoto, index, displayTimezone) {
   var timestamp = document.createElement('div');
   this.domContent_.appendChild(timestamp);
 }
-PhotoView.prototype.updateTimestampDisplay_ = function() {
+PhotoView.prototype.updateTimestampDisplay = function() {
   // We display the actual timestmp, without shifting applied.
   this.domContent_.lastChild.innerText = formatDate(this.exifPhoto_.timestamp(), this.displayTimezone_);
 };
-PhotoView.prototype.setTimezone = function(timezone) {
-  this.exifPhoto_.setTimezone(timezone);
-  this.updateTimestampDisplay_();
-};
 PhotoView.prototype.updateDisplayTimezone = function(timezone) {
   this.displayTimezone_ = displayTimezone;
-  this.updateTimestampDisplay_();
+  this.updateTimestampDisplay();
 };
 PhotoView.prototype.exifPhoto = function() {
   return this.exifPhoto_;
@@ -51,7 +47,7 @@ PhotoView.prototype.domContent = function() {
 
 function TimelineView(name, index) {
   this.index_ = index;
-  this.timeline_ = new Timeline();
+  this.timeline_ = new EXIFTimeline();
   this.photoViews_ = {};
 
   // TODO: Do this lazily?
@@ -66,64 +62,15 @@ TimelineView.prototype.lineDOMContent = function() {
 };
 TimelineView.prototype.addPhoto = function(url, exifData, displayTimezone) {
   // As well as adding the Photo to the Timeline, we create and keep our own
-  // reference to a corresponding PhotoView. We use this to handle DOM content
-  // and the multiple timestamps.
+  // reference to a corresponding PhotoView. We use this to handle DOM content.
   var exifPhoto = new EXIFPhoto(url, exifData);
   console.log('TimelineView.addPhoto(): Index=' + this.index_ + ' adding ' + exifPhoto);
   this.timeline_.addPhoto(exifPhoto);
   console.assert(this.photoViews_[url] === undefined);
   this.photoViews_[url] = new PhotoView(exifPhoto, this.index_, displayTimezone);
-  this.setTimestamps_();
-};
-TimelineView.prototype.setTimestamps_ = function() {
-  console.log('TimelineView.setTimestamps_()');
-  // Assume that the EXIF time wasn't reset within the timeline.
-  // The GPS timestamp is prone to wobble, so we never actually use it as a
-  // timestamp. We just use it to determine the timezone.
-  // TODO: If the EXIF timestamp (with timezone offset applied) is consistently
-  // shifted by a fixed amount from the 'correct' time based on the GPS
-  // timestamp, we could consider shifting it automatically. But this is hard
-  // to detect and it's easy for the user to fix this manually anyway.
-  var timezone = defaultTimezone;
-
-  // See if all the GPS timestamps correspond to a single timezone relative to
-  // the local timestamp, within some offset.
-  var thresholdMinutes = 5;
-  var consistentTimezones = timezoneJS.timezone.getAllZones();
-  var photoViews = this.photoViews_;
-  Object.keys(photoViews).every(function(url) {
-    var candidateTimezones = consistentTimezones;
-    consistentTimezones = [];
-    var exifPhoto = photoViews[url].exifPhoto();
-    console.log('exifPhoto = ' + exifPhoto);
-    var gpsTimestamp = exifPhoto.gpsTimestamp();
-    if (gpsTimestamp === null)
-      return false;
-    candidateTimezones.forEach(function(candidateTimezone) {
-      // TODO: Handle the two possibilities near a daylight-savings switch.
-      var timestamp = applyTimezoneToLocalTimestampProperties(exifPhoto.localTimestampProperties(), candidateTimezone);
-      var delta = timestamp - gpsTimestamp;
-      if (Math.abs(delta) / (1000 * 60) < thresholdMinutes)
-        consistentTimezones.push(candidateTimezone);
-    });
-    console.log('Consistent timezones after this photo: [' + consistentTimezones.join(', ') + ']');
-    return consistentTimezones.length > 0;
-  });
-  console.log('Consistent timezones after all photos: [' + consistentTimezones.join(', ') + ']');
-  // There could be multiple consistent timezones. While some could be
-  // identical, others may differ due to different dates for the DST switches.
-  // In theory, this could make a difference to how we resolve the local
-  // timestamps. In practice, because timezone offsets are discretized at 15
-  // minutes, which is larger than our threshold for consistency, this won't be
-  // a problem. So we just take the first timezone.
-  // TODO: Consider asserting that all consistent timezones are identical?
-  if (consistentTimezones.length > 0) {
-    console.log('Using calculated timezone ' + consistentTimezones[0]);
-    timezone = consistentTimezones[0];
-  }
- 
-  Object.keys(photoViews).forEach(function(url) {
-    photoViews[url].setTimezone(timezone);
+  this.timeline_.setTimestamps();
+  this.photoViews_.forEach(function(photoView) {
+    photoView.updateTimestampDisplay();
   });
 };
 TimelineView.prototype.getSortedPhotoViews = function() {
