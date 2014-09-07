@@ -37,11 +37,10 @@
         timezoneJS.timezone.loadingScheme = timezoneJS.timezone.loadingSchemes.PRELOAD_ALL;
         timezoneJS.timezone.init({callback: populateDisplayTimezones});
 
-        sorterView = new SorterView();
+        var displayTimezones = document.getElementById('displayTimezones');
+        sorterView = new SorterView(displayTimezones.value);
         document.getElementById('file_input').addEventListener('change', function(event) {
-          var displayTimezones = document.getElementById('displayTimezones');
-console.log(displayTimezones.value);
-          sorterView.addPhotos(event.target.files, displayTimezones.value, function() {
+          sorterView.addPhotos(event.target.files, function() {
             var lines = document.getElementById('lines');
             lines.innerHTML = '';
             sorterView.getLineDOMContents().forEach(function(domContent) {

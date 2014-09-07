@@ -45,10 +45,11 @@ PhotoView.prototype.domContent = function() {
   return this.domContent_;
 };
 
-function TimelineView(name, index) {
+function TimelineView(name, index, displayTimezone) {
   this.index_ = index;
   this.timeline_ = new EXIFTimeline();
   this.photoViews_ = {};
+  this.displayTimezone_ = displayTimezone;
 
   // TODO: Do this lazily?
   this.lineDOMContent_ = document.createElement('div');
@@ -60,17 +61,18 @@ function TimelineView(name, index) {
 TimelineView.prototype.lineDOMContent = function() {
   return this.lineDOMContent_;
 };
-TimelineView.prototype.addPhoto = function(url, exifData, displayTimezone) {
+TimelineView.prototype.addPhoto = function(url, exifData) {
   // As well as adding the Photo to the Timeline, we create and keep our own
   // reference to a corresponding PhotoView. We use this to handle DOM content.
   var exifPhoto = new EXIFPhoto(url, exifData);
   console.log('TimelineView.addPhoto(): Index=' + this.index_ + ' adding ' + exifPhoto);
   this.timeline_.addPhoto(exifPhoto);
   console.assert(this.photoViews_[url] === undefined);
-  this.photoViews_[url] = new PhotoView(exifPhoto, this.index_, displayTimezone);
+  this.photoViews_[url] = new PhotoView(exifPhoto, this.index_, this.displayTimezone_);
   this.timeline_.setTimestamps();
-  this.photoViews_.forEach(function(photoView) {
-    photoView.updateTimestampDisplay();
+  var photoViews = this.photoViews_;
+  Object.keys(photoViews).forEach(function(url) {
+    photoViews[url].updateTimestampDisplay();
   });
 };
 TimelineView.prototype.getSortedPhotoViews = function() {
@@ -80,6 +82,7 @@ TimelineView.prototype.getSortedPhotoViews = function() {
   });
 };
 TimelineView.prototype.updateDisplayTimezone = function(timezone) {
+  this.displayTimezone_ = timezone;
   var photoViews = this.photoViews_;
   Object.keys(photoViews).forEach(function(url) {
     photoViews[url].updateDisplayTimezone(timezone);
@@ -87,34 +90,36 @@ TimelineView.prototype.updateDisplayTimezone = function(timezone) {
 };
 
 // Owns a number of TimelineViews. Handles sorting of all the PhotoViews.
-function SorterView() {
+function SorterView(displayTimezone) {
   this.timelineViews_ = {}
   this.addPhotosRemainingCount_ = 0;
+  this.displayTimezone_ = displayTimezone;
 }
 SorterView.prototype.updateDisplayTimezone = function(timezone) {
+  this.displayTimezone_ = timezone;
   var timelineViews = this.timelineViews_;
   Object.keys(timelineViews).forEach(function(model) {
     timelineViews[model].updateDisplayTimezone(timezone);
   });
 };
-SorterView.prototype.addPhotos = function(files, displayTimezone, onComplete) {
+SorterView.prototype.addPhotos = function(files, onComplete) {
   console.assert(onComplete);
   console.assert(this.addPhotosRemainingCount_ === 0);
   this.addPhotosRemainingCount_ = files.length;
   this.onAddPhotosCompleteCallback_ = onComplete;
   for (var i = 0; i < files.length; ++i)
-    this.addPhoto_(files[i], displayTimezone);
+    this.addPhoto_(files[i]);
 };
 SorterView.prototype.getTimelineView_ = function(model) {
   // Each TimelineView uses an index which is determined by the order of
   // addition, even though the map keys could be sorted differently.
   if (this.timelineViews_[model] === undefined) {
     var numTimelineViews = Object.keys(this.timelineViews_).length;
-    this.timelineViews_[model] = new TimelineView(model, numTimelineViews);
+    this.timelineViews_[model] = new TimelineView(model, numTimelineViews, this.displayTimezone_);
   }
   return this.timelineViews_[model];
 };
-SorterView.prototype.addPhoto_ = function(file, displayTimezone) {
+SorterView.prototype.addPhoto_ = function(file) {
   var fileReader = new FileReader();
   var url = URL.createObjectURL(file);
   // TODO: Consider using proper closure
@@ -124,7 +129,7 @@ SorterView.prototype.addPhoto_ = function(file, displayTimezone) {
     var cameraModel = exifData['Model'];
     //console.log(exifData);
     // TODO: Add way to override which timeline to add to?
-    me.getTimelineView_(cameraModel).addPhoto(url, exifData, displayTimezone);
+    me.getTimelineView_(cameraModel).addPhoto(url, exifData);
     me.onPhotoAdded_();
   };
   fileReader.readAsBinaryString(file);
