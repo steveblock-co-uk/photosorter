@@ -38,13 +38,11 @@ PhotoView.prototype.updateDisplayTimezone = function(timezone) {
   this.displayTimezone_ = displayTimezone;
   this.updateTimestampDisplay();
 };
-PhotoView.prototype.exifPhoto = function() {
-  return this.exifPhoto_;
-};
 PhotoView.prototype.domContent = function() {
   return this.domContent_;
 };
 
+// Owns and provides view for an EXIFTimeline.
 function TimelineView(name, index, displayTimezone) {
   this.index_ = index;
   this.timeline_ = new EXIFTimeline();
@@ -76,11 +74,8 @@ TimelineView.prototype.addPhoto = function(exifPhoto) {
     photoViews[url].updateTimestampDisplay();
   });
 };
-TimelineView.prototype.getSortedPhotoViews = function() {
-  var photoViews = this.photoViews_;
-  return this.timeline_.getSortedPhotos().map(function(photo) {
-    return photoViews[photo.url()];
-  });
+TimelineView.prototype.getViewForPhoto = function(photo) {
+  return this.photoViews_[photo.url()];
 };
 TimelineView.prototype.updateDisplayTimezone = function(timezone) {
   this.displayTimezone_ = timezone;
@@ -90,9 +85,10 @@ TimelineView.prototype.updateDisplayTimezone = function(timezone) {
   });
 };
 
-// Owns a number of TimelineViews. Handles sorting of all the PhotoViews.
+// Owns and provides view for an EXIFSorter.
 function SorterView(displayTimezone) {
-  this.timelineViews_ = {}
+  this.sorter_ = new EXIFSorter();
+  this.timelineViews_ = {};
   this.displayTimezone_ = displayTimezone;
 }
 SorterView.prototype.updateDisplayTimezone = function(timezone) {
@@ -112,23 +108,19 @@ SorterView.prototype.getTimelineView_ = function(model) {
   return this.timelineViews_[model];
 };
 SorterView.prototype.addPhoto = function(exifPhoto) {
+  // As well as adding the EXIFPhoto to the EXIFSorter, we create and keep our
+  // own reference to a corresponding TimelineView. We use this to handle DOM
+  // content.
+  console.log('SorterView.addPhoto(): Adding ' + exifPhoto);
+  this.sorter_.addExifPhoto(exifPhoto);
   this.getTimelineView_(exifPhoto.cameraModel()).addPhoto(exifPhoto);
 };
-SorterView.prototype.shiftTimeline = function(index, shiftMilliseconds) {
-  // TODO: This should update the TimelineViews to display the shift time.
-  this.timelines_[index].shift(shiftMilliseconds);
-};
 SorterView.prototype.getSortedPhotoDOMContents = function() {
-  // TODO: Consider caching this?
   var timelineViews = this.timelineViews_;
-  var photoViews = Object.keys(timelineViews).map(function(model) {
-    return timelineViews[model].getSortedPhotoViews();
-  });
-  var sortedPhotoViews = mergeSort(photoViews, function(photoViewA, photoViewB) {
-    return photoViewA.exifPhoto().shiftedTimestamp() - photoViewB.exifPhoto().shiftedTimestamp();
-  });
-  return sortedPhotoViews.map(function(photoView) {
-    return photoView.domContent();
+  console.log(this.sorter_.getSortedPhotos());
+  return this.sorter_.getSortedPhotos().map(function(photo) {
+    console.log(timelineViews[photo.cameraModel()]);
+    return timelineViews[photo.cameraModel()].getViewForPhoto(photo).domContent();
   });
 };
 SorterView.prototype.getLineDOMContents = function() {
@@ -136,9 +128,4 @@ SorterView.prototype.getLineDOMContents = function() {
   return Object.keys(timelineViews).map(function(model) {
     return timelineViews[model].lineDOMContent();
   });
-};
-SorterView.prototype.toString = function() {
-  return this.timelines_.map(function(timeline) {
-    return '[' + timeline.getSortedPhotos().map(function(photo) { return photo.timestamp(); }).join(', ') + ']';
-  }).join('\n');
 };

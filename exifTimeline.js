@@ -137,3 +137,11 @@ EXIFTimeline.prototype.setTimestamps = function() {
     exifPhoto.setTimezone(timezone);
   });
 };
+
+function EXIFSorter() {
+  this.init_();
+}
+EXIFSorter.prototype = Sorter.prototype;
+EXIFSorter.prototype.addExifPhoto = function(exifPhoto) {
+  this.addPhoto(exifPhoto.cameraModel(), exifPhoto);
+};
