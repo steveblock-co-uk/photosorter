@@ -61,12 +61,13 @@ function TimelineView(name, index, displayTimezone) {
 TimelineView.prototype.lineDOMContent = function() {
   return this.lineDOMContent_;
 };
-TimelineView.prototype.addPhoto = function(url, exifData) {
-  // As well as adding the Photo to the Timeline, we create and keep our own
-  // reference to a corresponding PhotoView. We use this to handle DOM content.
-  var exifPhoto = new EXIFPhoto(url, exifData);
+TimelineView.prototype.addPhoto = function(exifPhoto) {
+  // As well as adding the EXIFPhoto to the EXIFTimeline, we create and keep
+  // our own reference to a corresponding PhotoView. We use this to handle DOM
+  // content.
   console.log('TimelineView.addPhoto(): Index=' + this.index_ + ' adding ' + exifPhoto);
   this.timeline_.addPhoto(exifPhoto);
+  var url = exifPhoto.url();
   console.assert(this.photoViews_[url] === undefined);
   this.photoViews_[url] = new PhotoView(exifPhoto, this.index_, this.displayTimezone_);
   this.timeline_.setTimestamps();
@@ -110,10 +111,8 @@ SorterView.prototype.getTimelineView_ = function(model) {
   }
   return this.timelineViews_[model];
 };
-SorterView.prototype.addPhoto = function(url, exifData) {
-  var cameraModel = exifData['Model'];
-  // TODO: Add way to override which timeline to add to?
-  this.getTimelineView_(cameraModel).addPhoto(url, exifData);
+SorterView.prototype.addPhoto = function(exifPhoto) {
+  this.getTimelineView_(exifPhoto.cameraModel()).addPhoto(exifPhoto);
 };
 SorterView.prototype.shiftTimeline = function(index, shiftMilliseconds) {
   // TODO: This should update the TimelineViews to display the shift time.

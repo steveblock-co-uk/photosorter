@@ -77,7 +77,7 @@
         var me = this;
         fileReader.onload = function() {
           var exifData = EXIF.readFromBinaryFile(new BinaryFile(this.result));
-          me.sorterView_.addPhoto(url, exifData);
+          me.sorterView_.addPhoto(new EXIFPhoto(url, exifData));
           me.onPhotoLoaded_();
         };
         fileReader.readAsBinaryString(file);

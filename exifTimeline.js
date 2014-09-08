@@ -47,6 +47,10 @@ function applyTimezoneToLocalTimestampProperties(localTimestampProperties, timez
                              timezone);
 }
 
+function getCameraModel(exifData) {
+  return exifData['Model'];
+}
+
 
 // Handles the multiple timestamps for a Photo.
 function EXIFPhoto(url, exifData) {
@@ -56,6 +60,8 @@ function EXIFPhoto(url, exifData) {
   // http://www.sno.phy.queensu.ca/~phil/exiftool/TagNames/EXIF.html
   this.localTimestampProperties_ = getLocalTimestampProperties(exifData);
   this.gpsTimestamp_ = getGPSTimestamp(exifData);
+
+  this.cameraModel_ = getCameraModel(exifData);
 
   var size = {x: exifData['PixelXDimension'], y: exifData['PixelYDimension']};
   this.init_(url, size);
@@ -72,6 +78,9 @@ EXIFPhoto.prototype.localTimestampProperties = function() {
 };
 EXIFPhoto.prototype.gpsTimestamp = function() {
   return this.gpsTimestamp_;
+};
+EXIFPhoto.prototype.cameraModel = function() {
+  return this.cameraModel_;
 };
 
 // Handles the multiple timestamps for a timeline of EXIFPhotos.
